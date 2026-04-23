@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TikTok Video Scheduler</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f0f0f;
+      color: #f1f1f1;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 18px 32px;
+      border-bottom: 1px solid #222;
+      background: #161616;
+    }
+    header svg { flex-shrink: 0; }
+    header h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.3px; }
+    header span { font-size: 0.8rem; color: #888; margin-left: auto; }
+
+    /* ── Main layout ── */
+    main {
+      display: grid;
+      grid-template-columns: 1fr 420px;
+      gap: 0;
+      flex: 1;
+      max-width: 1100px;
+      margin: 40px auto;
+      width: 100%;
+      padding: 0 24px;
+    }
+
+    /* ── Upload zone ── */
+    .upload-zone {
+      border: 2px dashed #333;
+      border-radius: 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 48px 32px;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      margin-right: 24px;
+      min-height: 420px;
+      position: relative;
+      overflow: hidden;
+    }
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: #fe2c55;
+      background: #1a0a0d;
+    }
+    .upload-zone input[type=file] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    .upload-zone .icon { font-size: 3rem; margin-bottom: 16px; }
+    .upload-zone p { color: #aaa; font-size: 0.95rem; text-align: center; line-height: 1.6; }
+    .upload-zone p strong { color: #f1f1f1; }
+    .upload-zone small { color: #555; font-size: 0.78rem; margin-top: 8px; }
+
+    /* video preview replaces the zone */
+    #preview-wrap {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+    }
+    #preview-wrap video {
+      border-radius: 12px;
+      max-height: 360px;
+      width: auto;
+      max-width: 100%;
+      background: #000;
+    }
+    #change-video {
+      font-size: 0.8rem; color: #fe2c55; background: none; border: none;
+      cursor: pointer; text-decoration: underline;
+    }
+
+    /* ── Settings panel ── */
+    .settings {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+    .settings h2 { font-size: 1rem; font-weight: 600; color: #ddd; }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      color: #888;
+      margin-bottom: 6px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    input[type=text], textarea, input[type=datetime-local] {
+      width: 100%;
+      background: #1e1e1e;
+      border: 1px solid #2e2e2e;
+      border-radius: 8px;
+      color: #f1f1f1;
+      padding: 10px 14px;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s;
+      font-family: inherit;
+    }
+    input:focus, textarea:focus { border-color: #fe2c55; }
+    textarea { resize: vertical; min-height: 90px; }
+
+    .char-count { font-size: 0.75rem; color: #555; text-align: right; margin-top: 4px; }
+
+    /* ── Mode toggle ── */
+    .mode-toggle {
+      display: flex;
+      border: 1px solid #2e2e2e;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .mode-toggle button {
+      flex: 1;
+      padding: 9px;
+      background: none;
+      border: none;
+      color: #888;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      font-family: inherit;
+    }
+    .mode-toggle button.active {
+      background: #fe2c55;
+      color: #fff;
+      font-weight: 600;
+    }
+
+    #schedule-row { display: none; }
+    #schedule-row.visible { display: block; }
+
+    /* ── Action button ── */
+    #submit-btn {
+      width: 100%;
+      padding: 13px;
+      background: #fe2c55;
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 700;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+      margin-top: 4px;
+    }
+    #submit-btn:hover { background: #e0183e; }
+    #submit-btn:active { transform: scale(0.98); }
+    #submit-btn:disabled { background: #444; cursor: not-allowed; transform: none; }
+
+    /* ── Status toast ── */
+    #toast {
+      display: none;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 14px 18px;
+      border-radius: 10px;
+      font-size: 0.88rem;
+      line-height: 1.5;
+    }
+    #toast.info    { background: #1a2a3a; border: 1px solid #2a4a6a; }
+    #toast.success { background: #0d2218; border: 1px solid #1a6040; }
+    #toast.error   { background: #2a0d10; border: 1px solid #6a1a20; }
+    #toast .dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      flex-shrink: 0; margin-top: 4px;
+    }
+    #toast.info .dot    { background: #4a9ef5; animation: pulse 1.2s infinite; }
+    #toast.success .dot { background: #22c55e; }
+    #toast.error .dot   { background: #ef4444; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
+    }
+
+    /* ── Job history ── */
+    .history { max-width: 1100px; margin: 0 auto 40px; padding: 0 24px; width: 100%; }
+    .history h2 { font-size: 0.9rem; color: #555; font-weight: 600; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.5px; }
+    #job-list { display: flex; flex-direction: column; gap: 8px; }
+    .job-row {
+      display: flex; align-items: center; gap: 14px;
+      background: #161616; border: 1px solid #222;
+      border-radius: 8px; padding: 10px 16px; font-size: 0.85rem;
+    }
+    .job-row .badge {
+      padding: 2px 9px; border-radius: 99px; font-size: 0.72rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.4px; flex-shrink: 0;
+    }
+    .badge.scheduled  { background: #1a2a3a; color: #4a9ef5; }
+    .badge.uploading  { background: #2a1a0a; color: #f59e0b; }
+    .badge.done       { background: #0d2218; color: #22c55e; }
+    .badge.error      { background: #2a0d10; color: #ef4444; }
+    .badge.queued     { background: #222; color: #888; }
+    .job-row .title   { flex: 1; color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .job-row .time    { color: #555; flex-shrink: 0; }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+    <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V8.69a8.16 8.16 0 004.77 1.52V6.77a4.85 4.85 0 01-1-.08z" fill="#fe2c55"/>
+  </svg>
+  <h1>TikTok Video Scheduler</h1>
+  <span>Content Posting API</span>
+</header>
+
+<!-- Main -->
+<main>
+
+  <!-- Left: upload zone -->
+  <div class="upload-zone" id="drop-zone">
+    <input type="file" id="file-input" accept="video/*" />
+    <div id="upload-placeholder">
+      <div class="icon">🎬</div>
+      <p><strong>Drop your video here</strong><br>or click to browse</p>
+      <small>MP4, MOV — up to 500 MB</small>
+    </div>
+    <div id="preview-wrap">
+      <video id="video-preview" controls muted playsinline></video>
+      <button id="change-video">Change video</button>
+    </div>
+  </div>
+
+  <!-- Right: settings -->
+  <div class="settings">
+    <h2>Post settings</h2>
+
+    <div>
+      <label for="title-input">Title</label>
+      <input type="text" id="title-input" placeholder="e.g. New EV charger hits 600 kW ⚡" maxlength="150" />
+      <div class="char-count"><span id="title-count">0</span> / 150</div>
+    </div>
+
+    <div>
+      <label for="caption-input">Caption &amp; hashtags</label>
+      <textarea id="caption-input" placeholder="#TechNews #Shorts #AI" maxlength="2200"></textarea>
+      <div class="char-count"><span id="caption-count">0</span> / 2200</div>
+    </div>
+
+    <div>
+      <label>Post timing</label>
+      <div class="mode-toggle">
+        <button class="active" id="btn-now" onclick="setMode('now')">Post now</button>
+        <button id="btn-schedule" onclick="setMode('schedule')">Schedule</button>
+      </div>
+    </div>
+
+    <div id="schedule-row">
+      <label for="schedule-dt">Date &amp; time</label>
+      <input type="datetime-local" id="schedule-dt" />
+    </div>
+
+    <div id="toast">
+      <div class="dot"></div>
+      <div id="toast-text"></div>
+    </div>
+
+    <button id="submit-btn" onclick="submit()">Post to TikTok</button>
+  </div>
+</main>
+
+<!-- Job history -->
+<div class="history">
+  <h2>Recent posts</h2>
+  <div id="job-list"><p style="color:#444;font-size:.85rem">No posts yet.</p></div>
+</div>
+
+<script>
+  let mode = 'now';
+  let selectedFile = null;
+  let pollTimer = null;
+  const jobs = {};
+
+  // ── File input / drag & drop ───────────────────────────────────────────────
+  const dropZone   = document.getElementById('drop-zone');
+  const fileInput  = document.getElementById('file-input');
+  const placeholder = document.getElementById('upload-placeholder');
+  const previewWrap = document.getElementById('preview-wrap');
+  const videoPreview = document.getElementById('video-preview');
+
+  fileInput.addEventListener('change', e => setFile(e.target.files[0]));
+  document.getElementById('change-video').addEventListener('click', e => {
+    e.stopPropagation();
+    fileInput.value = '';
+    selectedFile = null;
+    previewWrap.style.display = 'none';
+    placeholder.style.display = '';
+  });
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const f = e.dataTransfer.files[0];
+    if (f && f.type.startsWith('video/')) setFile(f);
+  });
+
+  function setFile(file) {
+    if (!file) return;
+    selectedFile = file;
+    videoPreview.src = URL.createObjectURL(file);
+    placeholder.style.display = 'none';
+    previewWrap.style.display = 'flex';
+  }
+
+  // ── Char counters ──────────────────────────────────────────────────────────
+  document.getElementById('title-input').addEventListener('input', function() {
+    document.getElementById('title-count').textContent = this.value.length;
+  });
+  document.getElementById('caption-input').addEventListener('input', function() {
+    document.getElementById('caption-count').textContent = this.value.length;
+  });
+
+  // ── Mode toggle ────────────────────────────────────────────────────────────
+  function setMode(m) {
+    mode = m;
+    document.getElementById('btn-now').classList.toggle('active', m === 'now');
+    document.getElementById('btn-schedule').classList.toggle('active', m === 'schedule');
+    document.getElementById('schedule-row').classList.toggle('visible', m === 'schedule');
+    document.getElementById('submit-btn').textContent = m === 'now' ? 'Post to TikTok' : 'Schedule post';
+    // pre-fill schedule to +1 hour
+    if (m === 'schedule' && !document.getElementById('schedule-dt').value) {
+      const d = new Date(Date.now() + 3600 * 1000);
+      document.getElementById('schedule-dt').value = d.toISOString().slice(0, 16);
+    }
+  }
+
+  // ── Toast ──────────────────────────────────────────────────────────────────
+  function showToast(type, msg) {
+    const t = document.getElementById('toast');
+    t.className = type;
+    t.style.display = 'flex';
+    document.getElementById('toast-text').textContent = msg;
+  }
+  function hideToast() {
+    document.getElementById('toast').style.display = 'none';
+  }
+
+  // ── Submit ─────────────────────────────────────────────────────────────────
+  async function submit() {
+    if (!selectedFile) { showToast('error', 'Please select a video first.'); return; }
+
+    const title   = document.getElementById('title-input').value.trim() || 'Tech News';
+    const caption = document.getElementById('caption-input').value.trim();
+    const btn     = document.getElementById('submit-btn');
+
+    const fd = new FormData();
+    fd.append('video', selectedFile);
+    fd.append('title', title);
+    fd.append('caption', caption);
+
+    let endpoint = '/upload';
+    if (mode === 'schedule') {
+      const dt = document.getElementById('schedule-dt').value;
+      if (!dt) { showToast('error', 'Pick a date and time.'); return; }
+      fd.append('scheduled_at', dt);
+      endpoint = '/schedule';
+    }
+
+    btn.disabled = true;
+    showToast('info', mode === 'now' ? 'Uploading to TikTok…' : 'Scheduling post…');
+
+    try {
+      const res = await fetch(endpoint, { method: 'POST', body: fd });
+      const data = await res.json();
+      if (!res.ok) { showToast('error', data.error || 'Request failed.'); btn.disabled = false; return; }
+
+      const jobId = data.job_id;
+      jobs[jobId] = { title, status: mode === 'schedule' ? 'scheduled' : 'queued',
+                      scheduled_at: data.scheduled_at || null, created_at: new Date().toLocaleString() };
+      renderJobs();
+
+      if (mode === 'schedule') {
+        showToast('success', `Scheduled for ${data.scheduled_at} ✓`);
+        btn.disabled = false;
+      } else {
+        pollStatus(jobId);
+      }
+
+    } catch(e) {
+      showToast('error', 'Network error: ' + e.message);
+      btn.disabled = false;
+    }
+  }
+
+  // ── Poll job status ────────────────────────────────────────────────────────
+  function pollStatus(jobId) {
+    clearInterval(pollTimer);
+    pollTimer = setInterval(async () => {
+      try {
+        const res = await fetch('/status/' + jobId);
+        const data = await res.json();
+        if (!res.ok) return;
+
+        jobs[jobId] = { ...jobs[jobId], ...data };
+        renderJobs();
+
+        if (data.status === 'done') {
+          clearInterval(pollTimer);
+          showToast('success', `Posted! Publish ID: ${data.publish_id}`);
+          document.getElementById('submit-btn').disabled = false;
+        } else if (data.status === 'error') {
+          clearInterval(pollTimer);
+          showToast('error', 'Upload failed: ' + data.message);
+          document.getElementById('submit-btn').disabled = false;
+        } else {
+          showToast('info', data.message || 'Uploading…');
+        }
+      } catch(e) { /* ignore transient errors */ }
+    }, 2000);
+  }
+
+  // ── Job history ────────────────────────────────────────────────────────────
+  function renderJobs() {
+    const list = document.getElementById('job-list');
+    const entries = Object.entries(jobs).reverse();
+    if (!entries.length) { list.innerHTML = '<p style="color:#444;font-size:.85rem">No posts yet.</p>'; return; }
+    list.innerHTML = entries.map(([id, j]) => `
+      <div class="job-row">
+        <span class="badge ${j.status}">${j.status}</span>
+        <span class="title">${j.title || 'Untitled'}</span>
+        <span class="time">${j.scheduled_at ? '🕐 ' + j.scheduled_at : j.created_at}</span>
+      </div>
+    `).join('');
+  }
+</script>
+</body>
+</html>

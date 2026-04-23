@@ -1,0 +1,9 @@
+.env
+output/
+*.pcm
+__pycache__/
+*.pyc
+dedup.db
+instagram_session.json
+videos_log.csv
+demo_ui/uploads/
