@@ -99,6 +99,11 @@ def _do_live_upload(job_id: str, video_path: str, title: str, caption: str) -> N
 # Routes
 # ---------------------------------------------------------------------------
 
+@app.route("/tiktokwpBb9Ptb49vV8nfJgpxw80MXAemo2MRb.txt")
+def tiktok_verify():
+    return "tiktok-developers-site-verification=wpBb9Ptb49vV8nfJgpxw80MXAemo2MRb", 200, {"Content-Type": "text/plain"}
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
