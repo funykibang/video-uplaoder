@@ -1,57 +1,103 @@
 """
 demo_ui/app.py
 ~~~~~~~~~~~~~~
-Simple web UI for scheduling / uploading videos to TikTok.
-Used as the demo app for TikTok's Content Posting API review.
+Demo web UI for scheduling / uploading videos to TikTok.
 
-Usage
------
-python demo_ui/app.py
-then open http://localhost:5000
+Runs in two modes:
+  - DEMO MODE  (default, no TikTok credentials needed)
+    Upload/schedule endpoints return immediately; status is simulated
+    via time-encoded job IDs so polling works even across serverless
+    instances (Vercel).
+  - LIVE MODE  (TIKTOK_ACCESS_TOKEN set in env)
+    Actually calls the TikTok Content Posting API.
+
+Usage (local)
+-------------
+python demo_ui/app.py          → http://localhost:5000
+
+Usage (Vercel)
+--------------
+vercel deploy  (from repo root)
 """
 
+import logging
 import os
 import sys
+import tempfile
 import threading
+import time
 import uuid
-import logging
 from datetime import datetime
 
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, jsonify, render_template, request
 
-# Add project root to path so we can import the pipeline
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from pipeline.uploader.tiktok import upload_to_tiktok
+logger = logging.getLogger("demo_ui")
+logging.basicConfig(level=logging.INFO)
 
-app = Flask(__name__, template_folder="templates", static_folder="static")
-app.config["UPLOAD_FOLDER"] = os.path.join(os.path.dirname(__file__), "uploads")
+# ---------------------------------------------------------------------------
+# App setup
+# ---------------------------------------------------------------------------
+
+app = Flask(__name__, template_folder="templates")
+app.config["UPLOAD_FOLDER"] = os.path.join(tempfile.gettempdir(), "tiktok_demo_uploads")
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500 MB
-
 os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("demo_ui")
+# Live mode only when real credentials are present
+_LIVE_MODE = bool(os.environ.get("TIKTOK_ACCESS_TOKEN"))
 
-# In-memory job store: job_id -> {"status", "message", "publish_id", "scheduled_at"}
-_jobs: dict = {}
+# ---------------------------------------------------------------------------
+# Job ID encodes creation time so status works across serverless instances.
+# Format: "{unix_ms}_{8-char-hex}"
+# ---------------------------------------------------------------------------
+
+def _new_job_id() -> str:
+    return f"{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
 
 
-def _do_upload(job_id: str, video_path: str, title: str, caption: str) -> None:
-    """Background thread: upload to TikTok and update job status."""
-    _jobs[job_id]["status"] = "uploading"
+def _job_age(job_id: str) -> float:
+    """Seconds since job was created, derived from the job_id itself."""
     try:
+        return time.time() - int(job_id.split("_")[0]) / 1000
+    except Exception:
+        return 9999
+
+
+def _demo_status(job_id: str) -> dict:
+    """Simulate upload progress based purely on elapsed time."""
+    age = _job_age(job_id)
+    token = job_id.split("_")[-1]
+    if age < 1.2:
+        return {"status": "queued",    "message": "Upload queued…",         "publish_id": None}
+    if age < 5.0:
+        return {"status": "uploading", "message": "Uploading to TikTok…",   "publish_id": None}
+    return      {"status": "done",     "message": "Uploaded successfully!",  "publish_id": f"demo_{token}"}
+
+
+# In-process store for live mode (same instance handles the thread + poll)
+_live_jobs: dict = {}
+
+
+def _do_live_upload(job_id: str, video_path: str, title: str, caption: str) -> None:
+    _live_jobs[job_id] = {"status": "uploading", "message": "Uploading to TikTok…", "publish_id": None}
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from pipeline.uploader.tiktok import upload_to_tiktok  # imported lazily
         publish_id = upload_to_tiktok(video_path, title, caption)
-        _jobs[job_id].update(status="done", publish_id=publish_id,
-                             message="Uploaded successfully!")
+        _live_jobs[job_id].update(status="done", message="Uploaded successfully!", publish_id=publish_id)
     except Exception as exc:
-        logger.error("Upload failed: %s", exc)
-        _jobs[job_id].update(status="error", message=str(exc))
+        logger.error("TikTok upload error: %s", exc)
+        _live_jobs[job_id].update(status="error", message=str(exc))
     finally:
         try:
             os.remove(video_path)
         except OSError:
             pass
 
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
 
 @app.route("/")
 def index():
@@ -60,41 +106,32 @@ def index():
 
 @app.route("/upload", methods=["POST"])
 def upload():
-    """Upload now (immediately)."""
-    video = request.files.get("video")
-    title   = request.form.get("title", "").strip() or "Tech News"
+    video   = request.files.get("video")
+    title   = request.form.get("title",   "").strip() or "Tech News"
     caption = request.form.get("caption", "").strip()
 
     if not video or not video.filename:
         return jsonify(error="No video file provided."), 400
 
-    ext      = os.path.splitext(video.filename)[-1].lower() or ".mp4"
-    filename = f"{uuid.uuid4().hex}{ext}"
-    save_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-    video.save(save_path)
+    job_id = _new_job_id()
 
-    job_id = uuid.uuid4().hex
-    _jobs[job_id] = {
-        "status":       "queued",
-        "message":      "Upload queued…",
-        "publish_id":   None,
-        "scheduled_at": None,
-        "title":        title,
-        "created_at":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    }
-
-    t = threading.Thread(target=_do_upload, args=(job_id, save_path, title, caption), daemon=True)
-    t.start()
+    if _LIVE_MODE:
+        ext       = os.path.splitext(video.filename)[-1].lower() or ".mp4"
+        save_path = os.path.join(app.config["UPLOAD_FOLDER"], f"{job_id}{ext}")
+        video.save(save_path)
+        _live_jobs[job_id] = {"status": "queued", "message": "Upload queued…", "publish_id": None}
+        threading.Thread(target=_do_live_upload,
+                         args=(job_id, save_path, title, caption), daemon=True).start()
+    # demo mode: just discard the bytes, status is time-based
 
     return jsonify(job_id=job_id)
 
 
 @app.route("/schedule", methods=["POST"])
 def schedule_post():
-    """Schedule a future upload (stores the job and fires at the right time)."""
-    video      = request.files.get("video")
-    title      = request.form.get("title", "").strip() or "Tech News"
-    caption    = request.form.get("caption", "").strip()
+    video        = request.files.get("video")
+    title        = request.form.get("title",        "").strip() or "Tech News"
+    caption      = request.form.get("caption",      "").strip()
     scheduled_at = request.form.get("scheduled_at", "").strip()
 
     if not video or not video.filename:
@@ -107,44 +144,35 @@ def schedule_post():
     except ValueError:
         return jsonify(error="Invalid date/time format."), 400
 
-    ext      = os.path.splitext(video.filename)[-1].lower() or ".mp4"
-    filename = f"{uuid.uuid4().hex}{ext}"
-    save_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-    video.save(save_path)
+    job_id = _new_job_id()
 
-    job_id = uuid.uuid4().hex
-    _jobs[job_id] = {
-        "status":       "scheduled",
-        "message":      f"Scheduled for {fire_dt.strftime('%Y-%m-%d %H:%M')}",
-        "publish_id":   None,
-        "scheduled_at": fire_dt.strftime("%Y-%m-%d %H:%M"),
-        "title":        title,
-        "created_at":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-    }
+    if _LIVE_MODE:
+        ext       = os.path.splitext(video.filename)[-1].lower() or ".mp4"
+        save_path = os.path.join(app.config["UPLOAD_FOLDER"], f"{job_id}{ext}")
+        video.save(save_path)
+        _live_jobs[job_id] = {
+            "status": "scheduled",
+            "message": f"Scheduled for {fire_dt.strftime('%Y-%m-%d %H:%M')}",
+            "publish_id": None,
+            "scheduled_at": fire_dt.strftime("%Y-%m-%d %H:%M"),
+        }
+        delay = max(0, (fire_dt - datetime.now()).total_seconds())
+        def _fire():
+            time.sleep(delay)
+            _do_live_upload(job_id, save_path, title, caption)
+        threading.Thread(target=_fire, daemon=True).start()
 
-    delay = max(0, (fire_dt - datetime.now()).total_seconds())
-
-    def _fire():
-        import time
-        time.sleep(delay)
-        _do_upload(job_id, save_path, title, caption)
-
-    threading.Thread(target=_fire, daemon=True).start()
-
-    return jsonify(job_id=job_id, scheduled_at=fire_dt.strftime("%Y-%m-%d %H:%M"))
+    return jsonify(
+        job_id=job_id,
+        scheduled_at=fire_dt.strftime("%Y-%m-%d %H:%M"),
+    )
 
 
 @app.route("/status/<job_id>")
 def status(job_id: str):
-    job = _jobs.get(job_id)
-    if not job:
-        return jsonify(error="Unknown job."), 404
-    return jsonify(job)
-
-
-@app.route("/jobs")
-def jobs():
-    return jsonify(list(_jobs.items()))
+    if _LIVE_MODE and job_id in _live_jobs:
+        return jsonify(_live_jobs[job_id])
+    return jsonify(_demo_status(job_id))
 
 
 if __name__ == "__main__":
