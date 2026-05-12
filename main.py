@@ -87,8 +87,8 @@ def _parse_args(argv=None) -> argparse.Namespace:
     parser.add_argument(
         "--llm-backend",
         dest="llm_backend",
-        choices=["ollama"],
-        default="ollama",
+        choices=["claude"],
+        default="claude",
         help="LLM backend for script generation (default: %(default)s).",
     )
     parser.add_argument(

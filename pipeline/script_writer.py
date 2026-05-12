@@ -14,7 +14,7 @@ import logging
 import re
 from typing import Optional
 
-import requests
+import anthropic
 
 import config
 
@@ -117,45 +117,33 @@ def _validate_script(script: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Ollama backend
+# Claude backend
 # ---------------------------------------------------------------------------
 
-def _call_ollama(prompt: str) -> str:
-    """
-    Call Ollama streaming API and assemble the full response text.
-    Raises ScriptGenerationError on any HTTP/network error.
-    """
-    payload = {
-        "model":  config.OLLAMA_MODEL,
-        "prompt": prompt,
-        "stream": True,
-    }
+_claude_client: Optional[anthropic.Anthropic] = None
+
+
+def _get_claude_client() -> anthropic.Anthropic:
+    global _claude_client
+    if _claude_client is None:
+        _claude_client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
+    return _claude_client
+
+
+def _call_claude(prompt: str) -> str:
+    """Call Claude Haiku and return the response text."""
     try:
-        response = requests.post(config.OLLAMA_URL, json=payload, timeout=120)
-    except requests.exceptions.RequestException as exc:
-        raise ScriptGenerationError(f"Network error calling Ollama: {exc}") from exc
-
-    if response.status_code != 200:
-        raise ScriptGenerationError(
-            f"Ollama returned HTTP {response.status_code}"
+        msg = _get_claude_client().messages.create(
+            model=config.CLAUDE_MODEL,
+            max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
         )
-
-    parts = []
-    for line in response.iter_lines():
-        if not line:
-            continue
-        try:
-            chunk = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        parts.append(chunk.get("response", ""))
-        if chunk.get("done"):
-            break
-
-    text = "".join(parts).strip()
-    if not text:
-        raise ScriptGenerationError("Ollama returned an empty response.")
-    return text
+        text = msg.content[0].text.strip()
+        if not text:
+            raise ScriptGenerationError("Claude returned an empty response.")
+        return text
+    except anthropic.APIError as exc:
+        raise ScriptGenerationError(f"Claude API error: {exc}") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +192,7 @@ def pick_best_article(candidates: list[dict]) -> dict:
     prompt = _RANK_PROMPT_TEMPLATE.format(articles_list="\n\n".join(lines))
 
     try:
-        raw = _call_ollama(prompt).strip()
+        raw = _call_claude(prompt).strip()
         # Extract the first integer found in the response
         import re
         match = re.search(r"\d+", raw)
@@ -222,7 +210,7 @@ def pick_best_article(candidates: list[dict]) -> dict:
     return candidates[0]
 
 
-def generate_script(article: dict, backend: str = "ollama") -> str:
+def generate_script(article: dict, backend: str = "claude") -> str:
     """
     Generate a validated TikTok narration script for *article*.
 
@@ -247,8 +235,8 @@ def generate_script(article: dict, backend: str = "ollama") -> str:
         If *backend* is not recognised, or *article* is missing required keys.
     """
     # --- input validation ---
-    if backend not in ("ollama",):
-        raise ValueError(f"Unsupported backend: {backend!r}. Only 'ollama' is supported.")
+    if backend not in ("claude",):
+        raise ValueError(f"Unsupported backend: {backend!r}. Only 'claude' is supported.")
 
     for key in ("title", "summary", "full_text"):
         if key not in article:
@@ -269,7 +257,7 @@ def generate_script(article: dict, backend: str = "ollama") -> str:
     last_error: Optional[Exception] = None
     for attempt in range(1, config.SCRIPT_MAX_RETRIES + 1):
         try:
-            raw = _call_ollama(prompt)
+            raw = _call_claude(prompt)
         except ScriptGenerationError as exc:
             last_error = exc
             logger.warning("Script attempt %d/%d failed: %s", attempt, config.SCRIPT_MAX_RETRIES, exc)
@@ -348,7 +336,7 @@ def generate_visual_queries(script: str, timings: list) -> list[dict]:
     prompt = _VISUAL_QUERY_PROMPT.format(lines=numbered)
     queries: list[str] = [""] * len(scientist_entries)
     try:
-        raw = _call_ollama(prompt).strip()
+        raw = _call_claude(prompt).strip()
         match = re.search(r"\[.*?\]", raw, re.DOTALL)
         if match:
             parsed = json.loads(match.group())

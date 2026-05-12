@@ -15,8 +15,8 @@ RSS_FEEDS = [
     "https://hnrss.org/newest?points=100",
 ]
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "llama3.1:8b"
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+CLAUDE_MODEL      = os.environ.get("CLAUDE_MODEL", "claude-haiku-4-5-20251001")
 
 OUTPUT_DIR = "output"
 ASSETS_DIR = "assets"
