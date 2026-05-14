@@ -55,7 +55,7 @@ def extract_word_timestamps(audio_path: str) -> List[Dict[str, Any]]:
     if WhisperModel is None:
         raise CaptionSyncError("faster-whisper is not installed. Run: pip install faster-whisper")
     try:
-        model = WhisperModel("base", device="cuda", compute_type="float16")
+        model = WhisperModel("base", device="cpu", compute_type="int8")
         segments, _info = model.transcribe(audio_path, word_timestamps=True, vad_filter=False)
 
         words: List[Dict[str, Any]] = []
