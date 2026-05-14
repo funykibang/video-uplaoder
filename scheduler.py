@@ -60,7 +60,7 @@ def _cleanup_output() -> None:
 def _run_job() -> None:
     logger.info("=== Scheduled pipeline run starting ===")
     try:
-        video_path, article = run_pipeline()
+        video_path, article = run_pipeline(llm_backend="claude")
         logger.info("Video ready: %s", video_path)
         upload_to_all(video_path, article)
     except Exception as exc:
