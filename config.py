@@ -26,7 +26,8 @@ _FFPROBE_WINGET = r"C:\Users\juras\AppData\Local\Microsoft\WinGet\Packages\Gyan.
 FFMPEG_PATH  = _FFMPEG_WINGET  if os.path.isfile(_FFMPEG_WINGET)  else (shutil.which("ffmpeg")  or "ffmpeg")
 FFPROBE_PATH = _FFPROBE_WINGET if os.path.isfile(_FFPROBE_WINGET) else (shutil.which("ffprobe") or "ffprobe")
 
-BACKGROUND_VIDEO = os.environ.get("BACKGROUND_VIDEO", "")
+BACKGROUND_VIDEO     = os.environ.get("BACKGROUND_VIDEO", "")
+BACKGROUND_VIDEO_URL = os.environ.get("BACKGROUND_VIDEO_URL", "")
 
 TTS_ENGINE = "elevenlabs"  # or "piper" / "coqui"
 PIPER_MODEL = "assets/voices/en_US-lessac-medium.onnx"
