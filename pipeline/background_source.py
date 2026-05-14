@@ -138,12 +138,19 @@ def get_background_video(duration: float, category: str = "satisfying") -> str:
     3. Random file from assets/backgrounds/
     4. Pexels download
     """
-    if getattr(config, "BACKGROUND_VIDEO", None):
-        path = config.BACKGROUND_VIDEO
-        if not os.path.isfile(path):
-            raise BackgroundSourceError(f"BACKGROUND_VIDEO not found: {path}")
-        logger.info("Using fixed background: %s", path)
-        return path
+    bg = getattr(config, "BACKGROUND_VIDEO", None)
+    if bg and bg.startswith("http"):
+        # treat a URL in BACKGROUND_VIDEO the same as BACKGROUND_VIDEO_URL
+        if os.path.isfile(_CACHED_URL_PATH):
+            logger.info("Using cached background: %s", _CACHED_URL_PATH)
+            return _CACHED_URL_PATH
+        return _download_from_url(bg)
+
+    if bg:
+        if not os.path.isfile(bg):
+            raise BackgroundSourceError(f"BACKGROUND_VIDEO not found: {bg}")
+        logger.info("Using fixed background: %s", bg)
+        return bg
 
     if getattr(config, "BACKGROUND_VIDEO_URL", None):
         if os.path.isfile(_CACHED_URL_PATH):
