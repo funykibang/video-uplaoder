@@ -5,169 +5,39 @@ Resolves a background video file for the composition step.
 
 Public API
 ----------
-get_background_video(duration: float, category="satisfying") -> str
-    Returns an absolute path to a suitable background MP4.
-    Picks randomly from assets/backgrounds/ if videos exist there;
-    otherwise tries to download one from Pexels (if API key is set).
+get_background_video(duration: float) -> str
+    Picks a random MP4 from assets/backgrounds/ and returns its path.
 
-Raises BackgroundSourceError if no background can be obtained.
+Raises BackgroundSourceError if no background videos are found.
 """
 
 import logging
 import os
 import random
-import tempfile
-from typing import Optional
 
 import config
 
-try:
-    import requests  # type: ignore
-except ImportError:  # pragma: no cover
-    requests = None  # type: ignore
-
 logger = logging.getLogger(__name__)
 
-
-# ---------------------------------------------------------------------------
-# Custom exceptions
-# ---------------------------------------------------------------------------
 
 class BackgroundSourceError(RuntimeError):
     """Raised when no background video can be obtained."""
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _list_local_backgrounds() -> list:
-    """Return a list of MP4 file paths from the backgrounds asset directory."""
+def get_background_video(duration: float, category: str = "satisfying") -> str:
     bg_dir = os.path.join(config.ASSETS_DIR, "backgrounds")
-    if not os.path.isdir(bg_dir):
-        return []
-    return [
+    videos = [
         os.path.join(bg_dir, f)
         for f in os.listdir(bg_dir)
         if f.lower().endswith(".mp4")
-    ]
+    ] if os.path.isdir(bg_dir) else []
 
-
-def _download_from_pexels(duration: float, category: str) -> Optional[str]:
-    """
-    Download a random video from the Pexels API that matches *category*.
-    Returns the path to the downloaded file, or None if the API key is not set
-    or the download fails.
-    """
-    if not config.PEXELS_API_KEY:
-        return None
-
-    try:
-        headers = {"Authorization": config.PEXELS_API_KEY}
-        params  = {
-            "query":    category,
-            "per_page": 15,
-            "min_duration": int(duration),
-        }
-        resp = requests.get(
-            "https://api.pexels.com/videos/search",
-            headers=headers,
-            params=params,
-            timeout=30,
+    if not videos:
+        raise BackgroundSourceError(
+            f"No background videos found in {bg_dir}. "
+            "Add MP4 files to assets/backgrounds/."
         )
-        resp.raise_for_status()
-        videos = resp.json().get("videos", [])
-        if not videos:
-            return None
 
-        video = random.choice(videos)
-        # Pick the highest-quality video file
-        files = sorted(
-            video.get("video_files", []),
-            key=lambda vf: vf.get("width", 0),
-            reverse=True,
-        )
-        if not files:
-            return None
-
-        video_url = files[0]["link"]
-        dl_resp   = requests.get(video_url, timeout=120, stream=True)
-        dl_resp.raise_for_status()
-
-        fd, path = tempfile.mkstemp(suffix=".mp4",
-                                    dir=os.path.join(config.ASSETS_DIR, "backgrounds"))
-        with os.fdopen(fd, "wb") as f:
-            for chunk in dl_resp.iter_content(chunk_size=65536):
-                f.write(chunk)
-        logger.info("Downloaded background video from Pexels: %s", path)
-        return path
-
-    except Exception as exc:
-        logger.warning("Pexels download failed: %s", exc)
-        return None
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-_CACHED_URL_PATH = os.path.join("assets", "backgrounds", "background_url.mp4")
-
-
-def _download_from_url(url: str) -> str:
-    """Download the video at *url* into assets/backgrounds/ and return the path."""
-    os.makedirs(os.path.dirname(_CACHED_URL_PATH), exist_ok=True)
-    logger.info("Downloading background video from URL …")
-    resp = requests.get(url, timeout=300, stream=True)
-    resp.raise_for_status()
-    with open(_CACHED_URL_PATH, "wb") as f:
-        for chunk in resp.iter_content(chunk_size=65536):
-            f.write(chunk)
-    logger.info("Background video cached at %s", _CACHED_URL_PATH)
-    return _CACHED_URL_PATH
-
-
-def get_background_video(duration: float, category: str = "satisfying") -> str:
-    """
-    Return the path to a background MP4 suitable for *duration* seconds.
-
-    Priority:
-    1. BACKGROUND_VIDEO env var (explicit local path)
-    2. BACKGROUND_VIDEO_URL env var — downloaded once and cached for the lifetime
-       of the container (re-downloaded if the file disappears after a restart)
-    3. Random file from assets/backgrounds/
-    4. Pexels download
-    """
-    bg = getattr(config, "BACKGROUND_VIDEO", None)
-    if bg and bg.startswith("http"):
-        # treat a URL in BACKGROUND_VIDEO the same as BACKGROUND_VIDEO_URL
-        if os.path.isfile(_CACHED_URL_PATH):
-            logger.info("Using cached background: %s", _CACHED_URL_PATH)
-            return _CACHED_URL_PATH
-        return _download_from_url(bg)
-
-    if bg:
-        if not os.path.isfile(bg):
-            raise BackgroundSourceError(f"BACKGROUND_VIDEO not found: {bg}")
-        logger.info("Using fixed background: %s", bg)
-        return bg
-
-    if getattr(config, "BACKGROUND_VIDEO_URL", None):
-        if os.path.isfile(_CACHED_URL_PATH):
-            logger.info("Using cached background: %s", _CACHED_URL_PATH)
-            return _CACHED_URL_PATH
-        return _download_from_url(config.BACKGROUND_VIDEO_URL)
-
-    local = _list_local_backgrounds()
-    if local:
-        chosen = random.choice(local)
-        logger.info("Using local background: %s", chosen)
-        return chosen
-
-    pexels_path = _download_from_pexels(duration, category)
-    if pexels_path:
-        return pexels_path
-
-    raise BackgroundSourceError(
-        "No background video found. Set BACKGROUND_VIDEO_URL in Railway env vars."
-    )
+    chosen = random.choice(videos)
+    logger.info("Using background: %s", chosen)
+    return chosen
