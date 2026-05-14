@@ -9,7 +9,7 @@ instagram_session.json
 videos_log.csv
 demo_ui/uploads/
 # Large binary assets — store these locally, not in git
-assets/backgrounds/*.mp4
+assets/backgrounds/YTDown*.mp4
 assets/voices/*.onnx
 # Coverage and IDE artefacts
 .coverage
