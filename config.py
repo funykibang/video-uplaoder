@@ -26,7 +26,7 @@ _FFPROBE_WINGET = r"C:\Users\juras\AppData\Local\Microsoft\WinGet\Packages\Gyan.
 FFMPEG_PATH  = _FFMPEG_WINGET  if os.path.isfile(_FFMPEG_WINGET)  else (shutil.which("ffmpeg")  or "ffmpeg")
 FFPROBE_PATH = _FFPROBE_WINGET if os.path.isfile(_FFPROBE_WINGET) else (shutil.which("ffprobe") or "ffprobe")
 
-BACKGROUND_VIDEO = r"assets\backgrounds\YTDown.com_YouTube_Minecraft-Parkour-Gameplay-NO-COPYRIGHT-_Media_s600FYgI5-s_001_1080p.mp4"
+BACKGROUND_VIDEO = os.environ.get("BACKGROUND_VIDEO", "")
 
 TTS_ENGINE = "elevenlabs"  # or "piper" / "coqui"
 PIPER_MODEL = "assets/voices/en_US-lessac-medium.onnx"
@@ -76,7 +76,7 @@ PEXELS_VIDEOS_COUNT = 2            # number of Pexels stock video clips to fetch
 # ---------------------------------------------------------------------------
 # Scheduler – times the server fires the pipeline each day (server local time)
 # ---------------------------------------------------------------------------
-SCHEDULE_TIMES = os.environ.get("SCHEDULE_TIMES", "08:00,14:00,20:00").split(",")
+SCHEDULE_TIMES = os.environ.get("SCHEDULE_TIMES", "12:00,20:00").split(",")
 CLEANUP_TIME   = os.environ.get("CLEANUP_TIME", "23:30")
 
 # ---------------------------------------------------------------------------
@@ -93,8 +93,12 @@ YOUTUBE_REFRESH_TOKEN = os.environ.get("YOUTUBE_REFRESH_TOKEN", "")
 INSTAGRAM_USERNAME = os.environ.get("INSTAGRAM_USERNAME", "")
 INSTAGRAM_PASSWORD = os.environ.get("INSTAGRAM_PASSWORD", "")
 
-# TikTok Content Posting API v2
+# TikTok Content Posting API v2 (legacy – no longer used)
 TIKTOK_CLIENT_KEY    = os.environ.get("TIKTOK_CLIENT_KEY", "")
 TIKTOK_CLIENT_SECRET = os.environ.get("TIKTOK_CLIENT_SECRET", "")
 TIKTOK_ACCESS_TOKEN  = os.environ.get("TIKTOK_ACCESS_TOKEN", "")
 TIKTOK_REFRESH_TOKEN = os.environ.get("TIKTOK_REFRESH_TOKEN", "")
+
+# upload-post third-party uploader
+UPLOAD_POST_API_KEY = os.environ.get("UPLOAD_POST_API_KEY", "")
+UPLOAD_POST_USER    = os.environ.get("UPLOAD_POST_USER", "")

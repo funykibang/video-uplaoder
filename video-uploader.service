@@ -1,0 +1,19 @@
+[Unit]
+Description=Video Uploader — auto-generate and post TikTok / Reels / Shorts
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=videobot
+WorkingDirectory=/opt/video-uploader
+EnvironmentFile=/opt/video-uploader/.env
+ExecStart=/opt/video-uploader/venv/bin/python scheduler.py
+Restart=on-failure
+RestartSec=60
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=video-uploader
+
+[Install]
+WantedBy=multi-user.target

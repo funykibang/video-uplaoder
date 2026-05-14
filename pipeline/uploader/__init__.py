@@ -1,21 +1,28 @@
 """
 pipeline.uploader
 ~~~~~~~~~~~~~~~~~
-Upload the finished MP4 to YouTube Shorts, Instagram Reels, and TikTok.
+Upload the finished MP4 via upload_post (UploadPostClient).
+
+Required .env keys
+------------------
+UPLOAD_POST_API_KEY  – API key from upload-post dashboard
+UPLOAD_POST_USER     – profile user created in the managed users page
 
 Public API
 ----------
 upload_to_all(video_path, article, platforms=None) -> dict
-    platforms defaults to all three.  Pass a subset list to skip platforms.
-    Returns {"youtube": id_or_None, "instagram": id_or_None, "tiktok": id_or_None}.
+    platforms defaults to ["tiktok", "instagram"].
+    Returns {"tiktok": response_or_None, "instagram": response_or_None, ...}.
 """
 
 import logging
 from typing import Optional
 
+import config
+
 logger = logging.getLogger(__name__)
 
-_ALL_PLATFORMS = ("youtube", "instagram", "tiktok")
+_ALL_PLATFORMS = ["tiktok", "instagram", "youtube"]
 
 
 def upload_to_all(
@@ -24,9 +31,9 @@ def upload_to_all(
     platforms: Optional[list[str]] = None,
 ) -> dict[str, Optional[str]]:
     """
-    Upload *video_path* to every platform in *platforms* (default: all three).
+    Upload *video_path* to all platforms in *platforms* (default: tiktok + instagram).
 
-    Returns a dict mapping platform name → uploaded ID/URL (or None on failure).
+    Returns a dict mapping platform name → result string (or None on failure).
     Never raises — failures are logged as errors so the pipeline keeps running.
     """
     if platforms is None:
@@ -34,47 +41,50 @@ def upload_to_all(
 
     title   = article.get("title", "Tech News")
     caption = _build_caption(article)
-    results: dict[str, Optional[str]] = {}
 
-    if "youtube" in platforms:
-        results["youtube"] = _try_upload("youtube", _upload_youtube, video_path, title, caption)
-
-    if "instagram" in platforms:
-        results["instagram"] = _try_upload("instagram", _upload_instagram, video_path, caption)
-
-    if "tiktok" in platforms:
-        results["tiktok"] = _try_upload("tiktok", _upload_tiktok, video_path, title, caption)
-
-    logger.info("Upload results: %s", results)
-    return results
-
-
-def _try_upload(platform: str, fn, *args) -> Optional[str]:
     try:
-        result = fn(*args)
-        logger.info("%s upload succeeded: %s", platform, result)
-        return result
+        from upload_post import UploadPostClient
+    except ImportError as exc:
+        raise RuntimeError(
+            "upload_post is not installed. Run: pip install upload-post"
+        ) from exc
+
+    client = UploadPostClient(api_key=config.UPLOAD_POST_API_KEY)
+
+    results: dict[str, Optional[str]] = {p: None for p in platforms}
+    try:
+        response = client.upload_video(
+            video_path=video_path,
+            title=title,
+            user=config.UPLOAD_POST_USER,
+            platforms=platforms,
+        )
+        if isinstance(response, dict) and response.get("success"):
+            # Async upload — job handed off to background worker
+            job_ref = response.get("request_id") or response.get("job_id") or "queued"
+            for p in platforms:
+                results[p] = job_ref
+            logger.info(
+                "Upload queued for %d platform(s). request_id=%s job_id=%s",
+                response.get("total_platforms", len(platforms)),
+                response.get("request_id"),
+                response.get("job_id"),
+            )
+        elif isinstance(response, dict):
+            for p in platforms:
+                results[p] = str(response.get(p)) if response.get(p) is not None else None
+            logger.info("Upload response: %s", response)
+        else:
+            for p in platforms:
+                results[p] = str(response) if response is not None else None
+            logger.info("Upload response: %s", response)
     except Exception as exc:
-        logger.error("%s upload failed: %s", platform, exc)
-        return None
+        logger.error("upload_post upload failed: %s", exc)
+
+    return results
 
 
 def _build_caption(article: dict) -> str:
     title  = article.get("title", "")
     source = article.get("source", "")
     return f"{title}\n\nSource: {source}\n\n#TechNews #Shorts #AI"
-
-
-def _upload_youtube(video_path: str, title: str, caption: str) -> str:
-    from pipeline.uploader.youtube import upload_to_youtube
-    return upload_to_youtube(video_path, title, caption)
-
-
-def _upload_instagram(video_path: str, caption: str) -> str:
-    from pipeline.uploader.instagram import upload_to_instagram
-    return upload_to_instagram(video_path, caption)
-
-
-def _upload_tiktok(video_path: str, title: str, caption: str) -> str:
-    from pipeline.uploader.tiktok import upload_to_tiktok
-    return upload_to_tiktok(video_path, title, caption)
