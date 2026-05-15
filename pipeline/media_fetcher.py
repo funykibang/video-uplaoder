@@ -130,10 +130,10 @@ def _fetch_pexels_videos(
     paths = []
     for i, video in enumerate(resp.json().get("videos", [])[:count]):
         files = video.get("video_files", [])
-        # Prefer hd portrait, fall back to sd, then any
+        # Prefer sd to keep memory low on CPU-only servers; fall back to hd
         chosen = None
-        for quality in ("hd", "sd", ""):
-            for vf in files:
+        for quality in ("sd", "hd", ""):
+            for vf in sorted(files, key=lambda f: f.get("width", 9999)):
                 if (not quality or vf.get("quality") == quality) and vf.get("link"):
                     chosen = vf["link"]
                     break
