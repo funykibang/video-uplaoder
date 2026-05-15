@@ -375,6 +375,7 @@ def compose_video(
                 "-map", "[vout]",
                 "-map", "[aout]",
                 "-c:v", "libx264",
+                "-preset", "faster",
                 "-crf", str(config.VIDEO_CRF),
                 "-r", str(config.VIDEO_FPS),
                 "-c:a", "aac",
@@ -395,6 +396,7 @@ def compose_video(
                     f"ass={ffmpeg_ass_path}"
                 ),
                 "-c:v", "libx264",
+                "-preset", "faster",
                 "-crf", str(config.VIDEO_CRF),
                 "-r", str(config.VIDEO_FPS),
                 "-c:a", "aac",
